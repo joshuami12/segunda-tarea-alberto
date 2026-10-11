@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSS Finanzas McDonald's</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{--ink:#27251f;--red:#da291c;--gold:#ffbc0d;--bg:#faf7f0;--card:#fff;--mute:#6b665a;--line:#e6dfcf}
+*{box-sizing:border-box}
+body{margin:0;font-family:Georgia,'Times New Roman',serif;background:var(--bg);color:var(--ink)}
+header{background:var(--red);color:#fff;padding:20px 16px 16px;border-bottom:5px solid var(--gold)}
+h1{margin:0;font-size:1.5rem}
+header p{margin:4px 0 14px;color:#ffd9d5;font-size:.95rem}
+.filters{display:flex;flex-wrap:wrap;gap:10px}
+label{font:600 .8rem system-ui,sans-serif;display:flex;flex-direction:column;gap:3px;color:#ffe9e6}
+select{font:1rem system-ui,sans-serif;padding:8px;border-radius:6px;border:0;min-width:120px}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
+.kpi{background:var(--card);border-left:5px solid var(--gold);padding:12px;border-radius:6px}
+.kpi b{display:block;font-size:1.35rem}
+.kpi span{font:.8rem system-ui,sans-serif;color:var(--mute)}
+.grid{display:grid;grid-template-columns:1fr;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:14px;min-width:0}
+.card h2{margin:0 0 4px;font-size:1.05rem}
+.card p{margin:0 0 10px;font:.82rem system-ui,sans-serif;color:var(--mute)}
+.box{position:relative;height:260px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font:.85rem system-ui,sans-serif}
+th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+footer{text-align:center;padding:16px;font:.8rem system-ui,sans-serif;color:var(--mute)}
+@media(min-width:760px){.kpis{grid-template-columns:repeat(4,1fr)}.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}h1{font-size:1.9rem}}
+</style>
+</head>
+<body>
+<header>
+  <h1>McDonald's: estados financieros 2002 a 2022</h1>
+  <p>Ingresos, rentabilidad, deuda y dividendos. Cambia el rango de años para comparar periodos.</p>
+  <div class="filters">
+    <label>Desde<select id="fFrom"></select></label>
+    <label>Hasta<select id="fTo"></select></label>
+  </div>
+</header>
+<main>
+  <section class="kpis">
+    <div class="kpi"><b id="kRev">-</b><span id="lRev">Ingresos</span></div>
+    <div class="kpi"><b id="kEarn">-</b><span id="lEarn">Utilidad</span></div>
+    <div class="kpi"><b id="kMar">-</b><span id="lMar">Margen operativo</span></div>
+    <div class="kpi"><b id="kDebt">-</b><span id="lDebt">Deuda / activos</span></div>
+  </section>
+  <section class="grid">
+    <div class="card wide"><h2>Ingresos y utilidad</h2><p>Miles de millones de dólares por año.</p><div class="box"><canvas id="cRev"></canvas></div></div>
+    <div class="card"><h2>Margen operativo</h2><p>Porcentaje de los ingresos que queda como utilidad operativa.</p><div class="box"><canvas id="cMar"></canvas></div></div>
+    <div class="card"><h2>Deuda, pasivos y activos</h2><p>Miles de millones de dólares.</p><div class="box"><canvas id="cDebt"></canvas></div></div>
+    <div class="card"><h2>Dividendo por acción</h2><p>Dólares, ajustado por splits.</p><div class="box"><canvas id="cDiv"></canvas></div></div>
+    <div class="card"><h2>Valor de mercado vs. otra variable</h2>
+      <p>Cada punto es un año. <select id="fVar" style="font-size:.85rem;padding:3px"><option value="earn">Utilidad</option><option value="eps">Utilidad por acción</option><option value="div">Dividendo</option><option value="rev">Ingresos</option><option value="debt">Deuda total</option></select> <span id="corr"></span></p>
+      <div class="box"><canvas id="cSc"></canvas></div></div>
+    <div class="card wide"><h2>Capital contable (net assets)</h2><p>Rojo indica capital negativo: los pasivos superan a los activos.</p><div class="box"><canvas id="cNet"></canvas></div></div>
+    <div class="card wide"><h2>Detalle por año</h2><div class="scroll"><table id="tbl"></table></div></div>
+  </section>
+</main>
+<footer>Fuente: McDonald's Financial Statements (Kaggle). Cifras en miles de millones de USD.</footer>
+<script>
+const $=id=>document.getElementById(id);
+let D=[],ch={};
+fetch('data.json').then(r=>r.json()).then(d=>{D=d;init()});
+const f1=n=>n.toFixed(2);
+const B=n=>'$'+n.toFixed(1)+' B';
+function init(){
+  const ys=D.map(r=>r.year);
+  const opts=ys.map(y=>`<option>${y}</option>`).join('');
+  $('fFrom').innerHTML=opts;$('fTo').innerHTML=opts;
+  $('fFrom').value=ys[0];$('fTo').value=ys[ys.length-1];
+  ['fFrom','fTo','fVar'].forEach(i=>$(i).addEventListener('change',render));
+  render();
+}
+function draw(id,cfg){
+  if(ch[id])ch[id].destroy();
+  cfg.options=Object.assign({responsive:true,maintainAspectRatio:false},cfg.options||{});
+  ch[id]=new Chart($(id),cfg);
+}
+function corr(x,y){
+  const n=x.length;if(n<3)return NaN;const m=a=>a.reduce((s,v)=>s+v,0)/n,mx=m(x),my=m(y);
+  let a=0,b=0,c=0;for(let i=0;i<n;i++){a+=(x[i]-mx)*(y[i]-my);b+=(x[i]-mx)**2;c+=(y[i]-my)**2}
+  return a/Math.sqrt(b*c);
+}
+function render(){
+  let a=+$('fFrom').value,b=+$('fTo').value;
+  if(a>b){[a,b]=[b,a]}
+  const R=D.filter(r=>r.year>=a&&r.year<=b),L=R[R.length-1],F=R[0],lab=R.map(r=>r.year);
+  $('kRev').textContent=B(L.rev);$('lRev').textContent='Ingresos '+L.year;
+  $('kEarn').textContent=B(L.earn);$('lEarn').textContent='Utilidad '+L.year;
+  $('kMar').textContent=L.margin.toFixed(1)+'%';$('lMar').textContent='Margen operativo '+L.year;
+  $('kDebt').textContent=(L.debt/L.assets*100).toFixed(0)+'%';$('lDebt').textContent='Deuda / activos '+L.year;
+  const ax={ticks:{maxTicksLimit:8}};
+  draw('cRev',{type:'line',data:{labels:lab,datasets:[{label:'Ingresos',data:R.map(r=>r.rev),borderColor:'#da291c',tension:.25},{label:'Utilidad',data:R.map(r=>r.earn),borderColor:'#ffbc0d',tension:.25}]},options:{scales:{x:ax}}});
+  draw('cMar',{type:'line',data:{labels:lab,datasets:[{label:'Margen %',data:R.map(r=>r.margin),borderColor:'#27251f',backgroundColor:'#27251f22',fill:true,tension:.25}]},options:{plugins:{legend:{display:false}},scales:{x:ax}}});
+  draw('cDebt',{type:'bar',data:{labels:lab,datasets:[{label:'Deuda',data:R.map(r=>r.debt),backgroundColor:'#da291c'},{label:'Pasivos',data:R.map(r=>r.liab),backgroundColor:'#ffbc0d'},{label:'Activos',data:R.map(r=>r.assets),backgroundColor:'#9a948a'}]},options:{scales:{x:ax}}});
+  draw('cDiv',{type:'bar',data:{labels:lab,datasets:[{data:R.map(r=>r.div),backgroundColor:'#ffbc0d'}]},options:{plugins:{legend:{display:false}},scales:{x:ax}}});
+  const k=$('fVar').value,names={earn:'Utilidad (B$)',eps:'EPS ($)',div:'Dividendo ($)',rev:'Ingresos (B$)',debt:'Deuda (B$)'};
+  const c=corr(R.map(r=>r[k]),R.map(r=>r.mcap));
+  $('corr').textContent='Correlación: '+(isNaN(c)?'N/D':c.toFixed(2));
+  draw('cSc',{type:'scatter',data:{datasets:[{data:R.map(r=>({x:r[k],y:r.mcap})),backgroundColor:'#da291cbb',pointRadius:4}]},options:{plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:names[k]}},y:{title:{display:true,text:'Valor de mercado (B$)'}}}}});
+  draw('cNet',{type:'bar',data:{labels:lab,datasets:[{data:R.map(r=>r.net),backgroundColor:R.map(r=>r.net<0?'#da291c':'#27251f')}]},options:{plugins:{legend:{display:false}},scales:{x:ax}}});
+  $('tbl').innerHTML='<tr><th>Año</th><th>Ingresos</th><th>Utilidad</th><th>Margen %</th><th>EPS</th><th>Deuda</th><th>Mkt cap</th></tr>'+R.slice().reverse().map(r=>`<tr><td>${r.year}</td><td>${f1(r.rev)}</td><td>${f1(r.earn)}</td><td>${f1(r.margin)}</td><td>${f1(r.eps)}</td><td>${f1(r.debt)}</td><td>${f1(r.mcap)}</td></tr>`).join('');
+}
+</script>
+</body>
+</html>
